@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: pratice
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,  liveness, readiness
+    endpoint:
+      health:
+        probes:
+          enabled:  true
+
