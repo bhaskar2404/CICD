@@ -26,7 +26,7 @@ pipeline{
                 sh 'docker build -t bhaskarvanam/spring-boot:v1 .'
             }
        }
-       stage(){
+       stage('Docker Push'){
         steps{
         sh 'docker push bhaskarvanam/spring-boot:v1'
         }
