@@ -27,9 +27,18 @@ pipeline{
             }
        }
        stage('Docker Push'){
-        steps{
-        sh 'docker push bhaskarvanam/spring-boot:v1'
-        }
+            steps{
+                sh 'docker push bhaskarvanam/spring-boot:v1'
+            }
+       }
+
+       stage('Deploy to Kubernetes'){
+         steps{
+            sh ''''
+                kubectl apply -f k8s/deployment.yml
+                kubectl apply -f k8s/service.yml
+            '''
+         }
        }
     }
 }
