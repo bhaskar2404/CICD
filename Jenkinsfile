@@ -1,11 +1,10 @@
 pipeline {
-
     agent any
 
     environment {
         PATH = "/usr/local/bin:${env.PATH}"
         IMAGE_NAME = "bhaskarvanam/spring-boot"
-        IMAGE_TAG = "v1"
+        IMAGE_TAG = "1.0.${BUILD_NUMBER}"
     }
 
     tools {
@@ -14,10 +13,9 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
-                git 'https://github.com/bhaskar2404/CICD.git'
+                git branch: 'dev', url: 'https://github.com/bhaskar2404/CICD.git'
             }
         }
 
@@ -50,7 +48,6 @@ pipeline {
 
         stage('Docker Push') {
             steps {
-
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'c98361e3-927f-49d7-95cf-1214da85f03f',
@@ -58,23 +55,30 @@ pipeline {
                         passwordVariable: 'DOCKER_TOKEN'
                     )
                 ]) {
-
                     sh '''
-                        echo $DOCKER_TOKEN | docker login \
-                        -u $DOCKER_USER \
-                        --password-stdin
-
+                        echo $DOCKER_TOKEN | docker login -u $DOCKER_USER --password-stdin
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
         }
 
+        stage('Check Files') {
+            steps {
+                sh '''
+                    pwd
+                    ls -la
+                    ls -la k8s
+                '''
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
+                    sed -i "s/IMAGE_TAG/${IMAGE_TAG}/g" k8s/deployment.yml
+                    kubectl apply -f k8s/deployment.yml
+                    kubectl apply -f k8s/service.yml
                 '''
             }
         }
@@ -90,11 +94,9 @@ pipeline {
     }
 
     post {
-
         success {
             echo 'CI/CD Pipeline completed successfully 🚀'
         }
-
         failure {
             echo 'Pipeline failed ❌'
         }
