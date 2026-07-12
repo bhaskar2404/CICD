@@ -24,7 +24,7 @@ public class DemoController {
         envValues.put("Pod Namespace",System.getenv("POD_NAMESPACE"));
         envValues.put("Node Name",System.getenv("NODE_NAME"));
         ZonedDateTime zoneDateTimeNow = ZonedDateTime.now();
-
+        envValues.put("Node Name",System.getenv("NODE_NAME"));
         envValues.put("Date",zoneDateTimeNow.toString() );
         return ResponseEntity.ok(envValues);
     }
