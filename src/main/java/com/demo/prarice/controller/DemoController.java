@@ -28,4 +28,9 @@ public class DemoController {
         envValues.put("Date",zoneDateTimeNow.toString() );
         return ResponseEntity.ok(envValues);
     }
+
+    @GetMapping("/green")
+    public ResponseEntity<?> greenApp(){
+        return ResponseEntity.ok("Green app  deployed");
+    }
 }
