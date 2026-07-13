@@ -38,13 +38,51 @@ pipeline {
 
 
 
+        stage('Create Kind Cluster') {
+
+            steps {
+
+                sh '''
+
+                echo "Checking Kind cluster"
+
+
+                if ! kind get clusters | grep -q "^kind$"
+                then
+
+                    echo "Creating Kind cluster"
+
+                    kind create cluster \
+                    --config k8s/cluster.yml
+
+                else
+
+                    echo "Kind cluster already exists"
+
+                fi
+
+
+                kubectl cluster-info
+
+
+                '''
+
+            }
+
+        }
+
+
+
         stage('Build & Test') {
 
             steps {
 
                 sh '''
-                    java -version
-                    mvn clean package
+
+                java -version
+
+                mvn clean package
+
                 '''
 
             }
@@ -58,8 +96,10 @@ pipeline {
             steps {
 
                 sh '''
-                    docker build \
-                    -t ${IMAGE_NAME}:${IMAGE_TAG} .
+
+                docker build \
+                -t ${IMAGE_NAME}:${IMAGE_TAG} .
+
                 '''
 
             }
@@ -95,7 +135,8 @@ pipeline {
                     --password-stdin
 
 
-                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push \
+                    ${IMAGE_NAME}:${IMAGE_TAG}
 
                     '''
 
@@ -107,7 +148,8 @@ pipeline {
 
 
 
-        stage('Decide Deployment Color') {
+        stage('Decide Blue Green') {
+
 
             steps {
 
@@ -127,60 +169,26 @@ pipeline {
                     if (blueExists != 0) {
 
 
-                        echo "No BLUE deployment found"
-
-                        echo "First deployment -> Deploy BLUE"
-
+                        echo "First deployment"
 
                         env.DEPLOY_COLOR = "blue"
 
 
-                    }
-
-                    else {
+                    } else {
 
 
-                        echo "BLUE deployment exists"
+                        echo "Blue exists"
 
-                        echo "New release -> Deploy GREEN"
-
+                        echo "Deploying Green"
 
                         env.DEPLOY_COLOR = "green"
 
-
                     }
 
 
-                    echo "Selected deployment color: ${env.DEPLOY_COLOR}"
-
+                    echo "Deploying ${env.DEPLOY_COLOR}"
 
                 }
-
-            }
-
-        }
-
-
-
-        stage('Prepare Kubernetes Manifest') {
-
-            steps {
-
-
-                sh """
-
-                echo Updating image tag
-
-
-                sed -i '' \
-                "s/IMAGE_TAG/${IMAGE_TAG}/g" \
-                k8s/${env.DEPLOY_COLOR}/deployment.yml
-
-
-                cat k8s/${env.DEPLOY_COLOR}/deployment.yml
-
-
-                """
 
             }
 
@@ -191,16 +199,21 @@ pipeline {
 
         stage('Deploy Application') {
 
+
             steps {
 
 
                 sh """
 
-                echo Deploying ${env.DEPLOY_COLOR}
+                sed -i '' \
+                "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+                k8s/${env.DEPLOY_COLOR}/deployment.yml
+
 
 
                 kubectl apply \
                 -f k8s/${env.DEPLOY_COLOR}/deployment.yml
+
 
 
                 kubectl apply \
@@ -212,6 +225,7 @@ pipeline {
                 deployment/springboot-app-${env.DEPLOY_COLOR}
 
 
+
                 """
 
             }
@@ -220,22 +234,48 @@ pipeline {
 
 
 
-        stage('Verify Deployment') {
+
+        stage('Health Check') {
+
+
+            steps {
+
+
+                sh """
+
+                echo "Checking ${env.DEPLOY_COLOR} health"
+
+
+                kubectl get pods \
+                -l color=${env.DEPLOY_COLOR}
+
+
+
+                kubectl rollout status \
+                deployment/springboot-app-${env.DEPLOY_COLOR} \
+                --timeout=120s
+
+
+                """
+
+            }
+
+        }
+
+
+
+
+        stage('Verify') {
+
 
             steps {
 
 
                 sh '''
 
-                echo "Pods"
-
                 kubectl get pods
 
-
-                echo "Services"
-
                 kubectl get svc
-
 
                 '''
 
@@ -243,35 +283,6 @@ pipeline {
 
         }
 
-
-
-        stage('Green Approval') {
-
-
-            when {
-
-                expression {
-
-                    env.DEPLOY_COLOR == "green"
-
-                }
-
-            }
-
-
-            steps {
-
-
-                input(
-
-                    message: 'Green deployment is ready. Continue traffic switch?'
-
-                )
-
-
-            }
-
-        }
 
 
     }
@@ -283,26 +294,21 @@ pipeline {
 
         success {
 
-
             echo """
-            CI/CD Pipeline completed successfully 🚀
+
+            Deployment Successful 🚀
 
             Image:
             ${IMAGE_NAME}:${IMAGE_TAG}
 
-            Deployment:
-            ${env.DEPLOY_COLOR}
             """
 
         }
 
 
-
         failure {
 
-
-            echo "Pipeline failed ❌"
-
+            echo "Deployment Failed ❌"
 
         }
 
