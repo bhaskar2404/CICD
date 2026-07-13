@@ -3,6 +3,7 @@ pipeline {
 
     agent any
 
+
     environment {
 
         PATH = "/usr/local/bin:/opt/homebrew/bin:${env.PATH}"
@@ -10,8 +11,6 @@ pipeline {
         IMAGE_NAME = "bhaskarvanam/spring-boot"
 
         IMAGE_TAG = "1.0.${BUILD_NUMBER}"
-
-        DEPLOY_COLOR = ""
 
     }
 
@@ -52,8 +51,6 @@ pipeline {
                 which docker
 
                 which kubectl
-
-                which kind || true
 
 
                 docker version
@@ -134,6 +131,7 @@ pipeline {
                     docker push \
                     ${IMAGE_NAME}:${IMAGE_TAG}
 
+
                     '''
 
                 }
@@ -166,14 +164,12 @@ pipeline {
 
         stage('Decide Deployment Color') {
 
-
             steps {
-
 
                 script {
 
 
-                    def blueStatus = sh(
+                    def blueExists = sh(
 
                         script: "kubectl get deployment springboot-app-blue",
 
@@ -182,31 +178,25 @@ pipeline {
                     )
 
 
-                    if (blueStatus != 0) {
+                    if (blueExists != 0) {
 
-
-                        echo "First deployment detected"
 
                         env.DEPLOY_COLOR = "blue"
 
-
-                    }
-
-                    else {
+                        echo "First deployment -> BLUE"
 
 
-                        echo "Blue application exists"
-
-                        echo "Deploying new version to Green"
+                    } else {
 
 
                         env.DEPLOY_COLOR = "green"
 
+                        echo "Existing BLUE found -> Deploy GREEN"
+
                     }
 
 
-                    echo "Deployment Color: ${env.DEPLOY_COLOR}"
-
+                    echo "Selected deployment: ${env.DEPLOY_COLOR}"
 
                 }
 
@@ -218,15 +208,37 @@ pipeline {
 
 
 
-        stage('Deploy Application') {
-
+        stage('Validate Kubernetes Files') {
 
             steps {
 
+                sh """
+
+                ls -la k8s/${DEPLOY_COLOR}
+
+
+                test -f k8s/${DEPLOY_COLOR}/deployment.yml
+
+                test -f k8s/${DEPLOY_COLOR}/service.yml
+
+
+                """
+
+            }
+
+        }
+
+
+
+
+
+        stage('Deploy Application') {
+
+            steps {
 
                 sh """
 
-                echo Deploying ${DEPLOY_COLOR}
+                echo "Deploying ${DEPLOY_COLOR}"
 
 
                 sed -i '' \
@@ -262,23 +274,19 @@ pipeline {
 
         stage('Health Check') {
 
-
             steps {
-
 
                 sh """
 
-                echo Checking ${DEPLOY_COLOR} health
+                echo "Checking ${DEPLOY_COLOR}"
 
 
                 kubectl get pods \
                 -l color=${DEPLOY_COLOR}
 
 
-
                 kubectl get endpoints \
                 springboot-${DEPLOY_COLOR}-service
-
 
 
                 """
@@ -291,38 +299,30 @@ pipeline {
 
 
 
-        stage('Application Test') {
+        stage('Green Approval') {
+
+            when {
+
+                expression {
+
+                    return env.DEPLOY_COLOR == "green"
+
+                }
+
+            }
 
 
             steps {
 
 
-                script {
+                input(
 
+                    message: 'Green is healthy. Promote traffic?',
 
-                    if (env.DEPLOY_COLOR == "green") {
+                    ok: 'Promote Green'
 
+                )
 
-                        input(
-
-                            message: 'Green deployment is ready. Continue traffic switch?',
-
-                            ok: 'Promote Green'
-
-                        )
-
-
-                    }
-
-                    else {
-
-
-                        echo "First deployment. No approval required"
-
-                    }
-
-
-                }
 
             }
 
@@ -334,9 +334,7 @@ pipeline {
 
         stage('Verify Deployment') {
 
-
             steps {
-
 
                 sh '''
 
@@ -351,9 +349,7 @@ pipeline {
         }
 
 
-
     }
-
 
 
     post {
@@ -378,7 +374,6 @@ pipeline {
             """
 
         }
-
 
 
         failure {
