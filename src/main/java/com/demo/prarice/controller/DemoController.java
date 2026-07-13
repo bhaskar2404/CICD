@@ -6,9 +6,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.ZonedDateTime;
-import java.util.Date;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -16,21 +14,25 @@ import java.util.Map;
 public class DemoController {
 
     @GetMapping
-    public ResponseEntity<Map> getWelcome(){
-        Map<String,String> envValues=new HashMap<>();
+    public ResponseEntity<Map<String,String>> getWelcome(){
 
+        Map<String,String> envValues = new HashMap<>();
 
-        envValues.put("HostName",System.getenv("HOSTNAME"));
-        envValues.put("Pod Namespace",System.getenv("POD_NAMESPACE"));
-        envValues.put("Node Name",System.getenv("NODE_NAME"));
+        envValues.put("HostName", System.getenv("HOSTNAME"));
+        envValues.put("Pod Namespace", System.getenv("POD_NAMESPACE"));
+        envValues.put("Node Name", System.getenv("NODE_NAME"));
+
         ZonedDateTime zoneDateTimeNow = ZonedDateTime.now();
-        envValues.put("Node Name",System.getenv("NODE_NAME"));
-        envValues.put("Date",zoneDateTimeNow.toString() );
+        envValues.put("Date", zoneDateTimeNow.toString());
+
         return ResponseEntity.ok(envValues);
     }
 
+
     @GetMapping("/green")
-    public ResponseEntity<?> greenApp(){
-        return ResponseEntity.ok("Green app  deployed");
+    public ResponseEntity<String> greenApp(){
+
+        return ResponseEntity.ok("Green app deployed");
+
     }
 }
