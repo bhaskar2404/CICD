@@ -13,9 +13,11 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                git branch: 'dev', url: 'https://github.com/bhaskar2404/CICD.git'
+                git branch: 'dev',
+                    url: 'https://github.com/bhaskar2404/CICD.git'
             }
         }
 
@@ -55,8 +57,12 @@ pipeline {
                         passwordVariable: 'DOCKER_TOKEN'
                     )
                 ]) {
+
                     sh '''
-                        echo $DOCKER_TOKEN | docker login -u $DOCKER_USER --password-stdin
+                        echo $DOCKER_TOKEN | docker login \
+                        -u $DOCKER_USER \
+                        --password-stdin
+
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
@@ -76,11 +82,12 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                   sed -i '' \
-                   "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-                   k8s/deployment.yml
+                    sed -i '' "s|IMAGE_TAG|${IMAGE_TAG}|g" k8s/deployment.yml
 
-                   cat k8s/deployment.yml
+                    echo "========== deployment.yml =========="
+                    cat k8s/deployment.yml
+
+                    kubectl apply -f k8s/deployment.yml
                     kubectl apply -f k8s/service.yml
                 '''
             }
@@ -89,47 +96,74 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 sh '''
+                    kubectl rollout status deployment/springboot-app
+
                     kubectl get pods
                     kubectl get svc
+
+                    echo "Application URL:"
+                    echo "http://localhost:30080/api/v1/entry"
                 '''
             }
         }
-        stage('Approval to Destroy') {
+
+        stage('Approval') {
             steps {
                 script {
-                    def answer = input(
-                        message: 'Type YES to destroy the application',
-                        parameters: [
-                            string(name: 'CONFIRM', defaultValue: 'NO', description: 'Enter YES to continue')
-                        ]
-                    ]
 
-                    if (answer != 'YES') {
-                        error("Destroy cancelled by user.")
+                    def action = input(
+                        id: 'DestroyApproval',
+                        message: 'Do you want to destroy the application?',
+                        ok: 'Continue',
+                        parameters: [
+                            choice(
+                                name: 'ACTION',
+                                choices: ['KEEP', 'DESTROY'],
+                                description: 'Select KEEP or DESTROY'
+                            )
+                        ]
+                    )
+
+                    if (action == 'KEEP') {
+                        env.DESTROY_APP = "false"
+                        echo "Keeping application running."
+                    } else {
+                        env.DESTROY_APP = "true"
+                        echo "Application will be destroyed."
                     }
                 }
             }
         }
 
         stage('Destroy Application') {
+            when {
+                expression {
+                    env.DESTROY_APP == "true"
+                }
+            }
+
             steps {
                 sh '''
-                    kubectl delete deployment springboot-app
-                    kubectl delete service springboot-service
+                    kubectl delete -f k8s/deployment.yml
+                    kubectl delete -f k8s/service.yml
                 '''
             }
         }
-
     }
 
     post {
+
         success {
-            echo 'CI/CD Pipeline completed successfully 🚀'
+            echo "CI/CD Pipeline completed successfully 🚀"
         }
+
         failure {
-            echo 'Pipeline failed ❌'
+            echo "Pipeline failed ❌"
+        }
+
+        always {
+            echo "Build Number : ${BUILD_NUMBER}"
+            echo "Docker Image : ${IMAGE_NAME}:${IMAGE_TAG}"
         }
     }
-
-
 }
