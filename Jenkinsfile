@@ -241,9 +241,7 @@ pipeline {
                 echo "Deploying ${DEPLOY_COLOR}"
 
 
-                sed -i '' \
-                "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-                k8s/${DEPLOY_COLOR}/deployment.yml
+                sed -i.bak "s|IMAGE_TAG|${IMAGE_TAG}|g" k8s/${DEPLOY_COLOR}/deployment.yml
 
 
 
