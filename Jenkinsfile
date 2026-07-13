@@ -11,8 +11,6 @@ pipeline {
 
         IMAGE_TAG = "1.0.${BUILD_NUMBER}"
 
-        DEPLOY_COLOR = ""
-
     }
 
 
@@ -50,6 +48,7 @@ pipeline {
                 '''
 
             }
+
         }
 
 
@@ -64,6 +63,7 @@ pipeline {
                 '''
 
             }
+
         }
 
 
@@ -97,7 +97,6 @@ pipeline {
 
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
-
                     '''
 
                 }
@@ -128,7 +127,10 @@ pipeline {
                     if (blueExists != 0) {
 
 
-                        echo "First deployment detected"
+                        echo "No BLUE deployment found"
+
+                        echo "First deployment -> Deploy BLUE"
+
 
                         env.DEPLOY_COLOR = "blue"
 
@@ -138,9 +140,9 @@ pipeline {
                     else {
 
 
-                        echo "Existing application found"
+                        echo "BLUE deployment exists"
 
-                        echo "Deploying new version to GREEN"
+                        echo "New release -> Deploy GREEN"
 
 
                         env.DEPLOY_COLOR = "green"
@@ -149,7 +151,8 @@ pipeline {
                     }
 
 
-                    echo "Selected deployment: ${DEPLOY_COLOR}"
+                    echo "Selected deployment color: ${env.DEPLOY_COLOR}"
+
 
                 }
 
@@ -159,36 +162,25 @@ pipeline {
 
 
 
-        stage('Deploy Application') {
+        stage('Prepare Kubernetes Manifest') {
 
             steps {
 
 
-                sh '''
+                sh """
 
-                echo Deploying ${DEPLOY_COLOR}
+                echo Updating image tag
 
 
                 sed -i '' \
                 "s/IMAGE_TAG/${IMAGE_TAG}/g" \
-                k8s/${DEPLOY_COLOR}/deployment.yml
+                k8s/${env.DEPLOY_COLOR}/deployment.yml
 
 
-
-                kubectl apply \
-                -f k8s/${DEPLOY_COLOR}/deployment.yml
+                cat k8s/${env.DEPLOY_COLOR}/deployment.yml
 
 
-
-                kubectl apply \
-                -f k8s/${DEPLOY_COLOR}/service.yml
-
-
-
-                kubectl rollout status deployment/springboot-app-${DEPLOY_COLOR}
-
-
-                '''
+                """
 
             }
 
@@ -197,15 +189,50 @@ pipeline {
 
 
 
-        stage('Verify Deployment') {
+        stage('Deploy Application') {
 
+            steps {
+
+
+                sh """
+
+                echo Deploying ${env.DEPLOY_COLOR}
+
+
+                kubectl apply \
+                -f k8s/${env.DEPLOY_COLOR}/deployment.yml
+
+
+                kubectl apply \
+                -f k8s/${env.DEPLOY_COLOR}/service.yml
+
+
+
+                kubectl rollout status \
+                deployment/springboot-app-${env.DEPLOY_COLOR}
+
+
+                """
+
+            }
+
+        }
+
+
+
+        stage('Verify Deployment') {
 
             steps {
 
 
                 sh '''
 
+                echo "Pods"
+
                 kubectl get pods
+
+
+                echo "Services"
 
                 kubectl get svc
 
@@ -237,7 +264,7 @@ pipeline {
 
                 input(
 
-                    message: 'Green deployment ready. Continue traffic switch?'
+                    message: 'Green deployment is ready. Continue traffic switch?'
 
                 )
 
@@ -245,7 +272,6 @@ pipeline {
             }
 
         }
-
 
 
     }
@@ -258,20 +284,24 @@ pipeline {
         success {
 
 
-            echo "Deployment completed successfully 🚀"
+            echo """
+            CI/CD Pipeline completed successfully 🚀
 
-            echo "Version: ${IMAGE_TAG}"
+            Image:
+            ${IMAGE_NAME}:${IMAGE_TAG}
 
-            echo "Color: ${DEPLOY_COLOR}"
-
+            Deployment:
+            ${env.DEPLOY_COLOR}
+            """
 
         }
+
 
 
         failure {
 
 
-            echo "Pipeline Failed ❌"
+            echo "Pipeline failed ❌"
 
 
         }
