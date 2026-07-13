@@ -94,6 +94,32 @@ pipeline {
                 '''
             }
         }
+        stage('Approval to Destroy') {
+            steps {
+                script {
+                    def answer = input(
+                        message: 'Type YES to destroy the application',
+                        parameters: [
+                            string(name: 'CONFIRM', defaultValue: 'NO', description: 'Enter YES to continue')
+                        ]
+                    ]
+
+                    if (answer != 'YES') {
+                        error("Destroy cancelled by user.")
+                    }
+                }
+            }
+        }
+
+        stage('Destroy Application') {
+            steps {
+                sh '''
+                    kubectl delete deployment springboot-app
+                    kubectl delete service springboot-service
+                '''
+            }
+        }
+
     }
 
     post {
@@ -104,4 +130,6 @@ pipeline {
             echo 'Pipeline failed ❌'
         }
     }
+
+
 }
