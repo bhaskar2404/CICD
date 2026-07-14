@@ -1,7 +1,8 @@
 pipeline {
 
-
+```
 agent any
+
 
 environment {
 
@@ -10,8 +11,6 @@ environment {
     IMAGE_NAME = "bhaskarvanam/spring-boot"
 
     IMAGE_TAG = "1.0.${BUILD_NUMBER}"
-
-    DEPLOY_COLOR = ""
 
 }
 
@@ -52,7 +51,6 @@ stages {
                 which docker
 
                 which kubectl
-
 
                 docker version
 
@@ -104,6 +102,7 @@ stages {
     stage('Docker Push') {
 
         steps {
+
 
             withCredentials([
 
@@ -166,7 +165,7 @@ stages {
 
                 def blueExists = sh(
 
-                    script: "kubectl get deployment springboot-app-blue",
+                    script: "kubectl get deployment springboot-app-blue >/dev/null 2>&1",
 
                     returnStatus: true
 
@@ -178,9 +177,10 @@ stages {
 
                     env.DEPLOY_COLOR = "blue"
 
+
                     echo "FIRST DEPLOYMENT"
 
-                    echo "Deploying BLUE"
+                    echo "Selected BLUE"
 
 
                 } else {
@@ -188,15 +188,39 @@ stages {
 
                     env.DEPLOY_COLOR = "green"
 
+
                     echo "BLUE EXISTS"
 
-                    echo "Deploying GREEN"
+                    echo "Selected GREEN"
 
                 }
 
 
-                echo "Selected Color: ${env.DEPLOY_COLOR}"
+                echo "FINAL DEPLOY COLOR = ${env.DEPLOY_COLOR}"
 
+
+            }
+
+        }
+
+    }
+
+
+
+    stage('Validate Deployment Color') {
+
+        steps {
+
+            script {
+
+                if (!env.DEPLOY_COLOR) {
+
+                    error("DEPLOY_COLOR is empty. Stopping pipeline")
+
+                }
+
+
+                echo "Deploying ${env.DEPLOY_COLOR}"
 
             }
 
@@ -259,7 +283,6 @@ stages {
                 kubectl get endpoints \
                 springboot-${env.DEPLOY_COLOR}-service
 
-
             """
 
         }
@@ -269,7 +292,6 @@ stages {
 
 
     stage('Approve BLUE Deployment') {
-
 
         when {
 
@@ -287,11 +309,12 @@ stages {
 
             input(
 
-                message: "GREEN is healthy. Deploy this version to BLUE?",
+                message: "GREEN deployment is healthy. Deploy this version to BLUE?",
 
                 ok: "Deploy BLUE"
 
             )
+
 
         }
 
@@ -318,7 +341,7 @@ stages {
 
             sh """
 
-                echo "Deploying ${IMAGE_TAG} to BLUE"
+                echo "Deploying same image to BLUE"
 
 
                 sed -i.bak \
@@ -340,6 +363,7 @@ stages {
                 kubectl rollout status \
                 deployment/springboot-app-blue \
                 --timeout=120s
+
 
             """
 
@@ -368,15 +392,9 @@ stages {
 
             sh '''
 
-                echo "BLUE verification"
-
-
-                kubectl get pods \
-                -l color=blue
-
+                kubectl get pods -l color=blue
 
                 kubectl get svc springboot-blue-service
-
 
             '''
 
@@ -405,7 +423,7 @@ stages {
 
             input(
 
-                message: "BLUE is working. Delete GREEN deployment?",
+                message: "BLUE is running successfully. Delete GREEN?",
 
                 ok: "Delete GREEN"
 
@@ -433,48 +451,46 @@ post {
 
     success {
 
-
         echo """
+```
 
-
-========================================
+====================================
 
 PIPELINE SUCCESS 🚀
 
-Image:
+IMAGE:
 
 ${IMAGE_NAME}:${IMAGE_TAG}
 
-Deployment Color:
+COLOR:
 
 ${env.DEPLOY_COLOR}
 
-========================================
+====================================
 
 """
 
-
+```
     }
-
 
 
     failure {
 
-
         echo """
+```
 
-========================================
+====================================
 
 PIPELINE FAILED ❌
 
-========================================
+====================================
 
 """
 
-
+```
     }
 
 }
-
+```
 
 }
