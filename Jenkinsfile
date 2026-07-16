@@ -2,6 +2,7 @@ pipeline {
 
     agent any
 
+
     environment {
 
         PATH = "/usr/local/bin:/opt/homebrew/bin:${env.PATH}"
@@ -30,46 +31,24 @@ pipeline {
             steps {
 
                 git branch: 'dev',
-                    url: 'https://github.com/bhaskar2404/CICD.git'
+                url: 'https://github.com/bhaskar2404/CICD.git'
 
             }
 
         }
 
 
-        stage('Tool Check') {
+        stage('Build') {
 
             steps {
 
-                sh '''
-
-                echo "Checking tools"
-
-                which docker
-                which kubectl
-
-                docker version
-
-                kubectl version --client
-
-                '''
-
-            }
-
-        }
-
-
-        stage('Build & Test') {
-
-            steps {
-
-                sh '''
+                sh """
 
                 java -version
 
                 mvn clean package
 
-                '''
+                """
 
             }
 
@@ -80,12 +59,12 @@ pipeline {
 
             steps {
 
-                sh '''
+                sh """
 
                 docker build \
                 -t ${IMAGE_NAME}:${IMAGE_TAG} .
 
-                '''
+                """
 
             }
 
@@ -95,6 +74,7 @@ pipeline {
         stage('Docker Push') {
 
             steps {
+
 
                 withCredentials([
 
@@ -111,16 +91,17 @@ pipeline {
                 ]) {
 
 
-                    sh '''
+                    sh """
 
-                    echo $DOCKER_TOKEN | docker login \
-                    -u $DOCKER_USER \
+                    echo \$DOCKER_TOKEN | docker login \
+                    -u \$DOCKER_USER \
                     --password-stdin
 
 
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
-                    '''
+
+                    """
 
                 }
 
@@ -134,13 +115,11 @@ pipeline {
 
             steps {
 
-                sh '''
-
-                kubectl cluster-info
+                sh """
 
                 kubectl get nodes
 
-                '''
+                """
 
             }
 
@@ -148,50 +127,42 @@ pipeline {
 
 
 
-        stage('Decide Deployment Color') {
+        stage('Decide Color') {
 
             steps {
 
                 script {
 
 
-                    def blueExists = sh(
+                    def blue = sh(
 
-                    script: "kubectl get deployment springboot-app-blue >/dev/null 2>&1",
+                    script: "kubectl get deployment springboot-app-blue",
 
-                    returnStatus: true
+                    returnStatus:true
 
                     )
 
 
-                    if (blueExists != 0) {
+                    if(blue != 0){
 
-
-                        env.DEPLOY_COLOR = "blue"
-
-                        echo "FIRST DEPLOYMENT -> BLUE"
-
+                        env.DEPLOY_COLOR="blue"
 
                     }
-                    else {
+                    else{
 
-
-                        env.DEPLOY_COLOR = "green"
-
-                        echo "BLUE EXISTS -> DEPLOY GREEN"
-
+                        env.DEPLOY_COLOR="green"
 
                     }
 
 
-                    echo "DEPLOY COLOR = ${env.DEPLOY_COLOR}"
-
+                    echo "Deploying ${env.DEPLOY_COLOR}"
 
                 }
 
             }
 
         }
+
 
 
 
@@ -202,25 +173,24 @@ pipeline {
 
                 sh """
 
-                echo "Deploying ${env.DEPLOY_COLOR}"
-
-
                 sed -i.bak \
                 "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-                k8s/${env.DEPLOY_COLOR}/deployment.yml
+                k8s/${DEPLOY_COLOR}/deployment.yml
 
-
-                kubectl apply \
-                -f k8s/${env.DEPLOY_COLOR}/deployment.yml
 
 
                 kubectl apply \
-                -f k8s/${env.DEPLOY_COLOR}/service.yml
+                -f k8s/${DEPLOY_COLOR}/deployment.yml
+
+
+
+                kubectl apply \
+                -f k8s/${DEPLOY_COLOR}/service.yml
 
 
 
                 kubectl rollout status \
-                deployment/springboot-app-${env.DEPLOY_COLOR} \
+                deployment/springboot-app-${DEPLOY_COLOR} \
                 --timeout=120s
 
 
@@ -236,18 +206,14 @@ pipeline {
 
             steps {
 
-
                 sh """
 
-                echo "Health Check ${env.DEPLOY_COLOR}"
-
-
                 kubectl get pods \
-                -l color=${env.DEPLOY_COLOR}
+                -l color=${DEPLOY_COLOR}
 
 
                 kubectl get endpoints \
-                springboot-${env.DEPLOY_COLOR}-service
+                springboot-${DEPLOY_COLOR}-service
 
 
                 """
@@ -259,18 +225,18 @@ pipeline {
 
 
         /*
-         First deployment:
-         BLUE becomes live
+          FIRST DEPLOYMENT
+          Create BLUE test ingress
         */
 
-        stage('Create BLUE Ingress') {
+        stage('Create Blue Ingress') {
 
 
             when {
 
                 expression {
 
-                    return env.DEPLOY_COLOR == "blue"
+                    return env.DEPLOY_COLOR=="blue"
 
                 }
 
@@ -282,17 +248,18 @@ pipeline {
 
                 sh """
 
-                echo "Creating BLUE ingress"
+                echo "Creating Blue Ingress"
 
 
                 kubectl apply \
-                -f k8s/blue/ingress.yml
+                -f k8s/blue/ingress-test.yml
+
+
+                kubectl apply \
+                -f k8s/blue/ingress-prod.yml
 
 
                 kubectl get ingress
-
-
-                kubectl describe ingress springboot-ingress
 
 
                 """
@@ -304,18 +271,56 @@ pipeline {
 
 
         /*
-         Second deployment:
-         GREEN validation
+          GREEN deployment testing
         */
 
-        stage('Approve GREEN Traffic Switch') {
+
+        stage('Create Green Test Ingress') {
 
 
             when {
 
                 expression {
 
-                    return env.DEPLOY_COLOR == "green"
+                    return env.DEPLOY_COLOR=="green"
+
+                }
+
+            }
+
+
+            steps {
+
+
+                sh """
+
+                echo "Creating Green Test Ingress"
+
+
+                kubectl apply \
+                -f k8s/green/ingress-test.yml
+
+
+                kubectl get ingress
+
+
+                """
+
+            }
+
+        }
+
+
+
+
+        stage('Approve Production Switch') {
+
+
+            when {
+
+                expression {
+
+                    return env.DEPLOY_COLOR=="green"
 
                 }
 
@@ -327,9 +332,11 @@ pipeline {
 
                 input(
 
-                    message: "GREEN is healthy. Switch traffic to GREEN?",
+                message:
+                "Green tested successfully. Switch production traffic?",
 
-                    ok: "Promote GREEN"
+                ok:
+                "Promote Green"
 
                 )
 
@@ -339,14 +346,15 @@ pipeline {
 
 
 
-        stage('Switch Traffic To GREEN') {
+
+        stage('Switch Production To Green') {
 
 
             when {
 
                 expression {
 
-                    return env.DEPLOY_COLOR == "green"
+                    return env.DEPLOY_COLOR=="green"
 
                 }
 
@@ -358,14 +366,12 @@ pipeline {
 
                 sh """
 
-                echo "Switching traffic to GREEN"
+                echo "Switching production traffic to Green"
 
 
                 kubectl apply \
-                -f k8s/green/ingress.yml
+                -f k8s/green/ingress-prod.yml
 
-
-                kubectl get ingress
 
 
                 kubectl describe ingress springboot-ingress
@@ -379,12 +385,14 @@ pipeline {
 
 
 
-        stage('Verify Deployment') {
+
+        stage('Verify') {
+
 
             steps {
 
 
-                sh '''
+                sh """
 
                 kubectl get pods
 
@@ -392,40 +400,8 @@ pipeline {
 
                 kubectl get ingress
 
-                '''
 
-            }
-
-        }
-
-
-        stage('Rollback Option') {
-
-
-            when {
-
-                expression {
-
-                    return env.DEPLOY_COLOR == "green"
-
-                }
-
-            }
-
-
-            steps {
-
-
-                input(
-
-                    message: "Keep GREEN or rollback to BLUE?",
-
-                    ok: "Continue"
-
-                )
-
-
-                echo "Deployment completed"
+                """
 
             }
 
@@ -435,16 +411,14 @@ pipeline {
     }
 
 
-
     post {
 
 
         success {
 
-
             echo """
 
-======================================
+====================================
 
 PIPELINE SUCCESS 🚀
 
@@ -453,12 +427,11 @@ IMAGE:
 ${IMAGE_NAME}:${IMAGE_TAG}
 
 
-DEPLOYED COLOR:
+COLOR:
 
-${env.DEPLOY_COLOR}
+${DEPLOY_COLOR}
 
-
-======================================
+====================================
 
 """
 
@@ -467,14 +440,13 @@ ${env.DEPLOY_COLOR}
 
         failure {
 
-
             echo """
 
-======================================
+====================================
 
 PIPELINE FAILED ❌
 
-======================================
+====================================
 
 """
 
