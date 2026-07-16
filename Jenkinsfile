@@ -273,6 +273,10 @@ pipeline {
                  kubectl apply \
                  -f k8s/${env.DEPLOY_COLOR}/service.yml
 
+                 kubectl apply \
+                           -f k8s/${env.DEPLOY_COLOR}/ingress.yml
+
+
 
 
                  kubectl rollout status \
