@@ -362,31 +362,34 @@ pipeline {
          }
 
 
-stage('Deploy BLUE Ingress') {
+         stage('Deploy BLUE Ingress') {
 
-    when {
-        expression {
-            return env.DEPLOY_COLOR == "green"
-        }
-    }
+             when {
+                 expression {
+                     return env.DEPLOY_COLOR == "green"
+                 }
+             }
 
-    steps {
+             steps {
 
-        sh """
+                 sh """
 
-        echo "Switching Ingress to BLUE"
+                 echo "Switching Ingress to BLUE"
 
-        kubectl apply -f k8s/blue/ingress.yml
+                 kubectl apply -f k8s/blue/ingress.yml
 
-        kubectl rollout status deployment/ingress-nginx-controller \
-            -n ingress-nginx --timeout=60s || true
+                 kubectl rollout status deployment/ingress-nginx-controller \
+                     -n ingress-nginx --timeout=60s || true
 
-        kubectl describe ingress springboot-ingress
+                 kubectl describe ingress springboot-ingress
 
-        """
+                 """
 
-    }
-}
+             }
+         }
+
+
+
 
 
          stage('Approve GREEN Traffic Switch') {
