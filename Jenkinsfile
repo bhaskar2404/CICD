@@ -1,571 +1,485 @@
 pipeline {
 
-     agent any
+    agent any
 
+    environment {
 
-     environment {
+        PATH = "/usr/local/bin:/opt/homebrew/bin:${env.PATH}"
 
-         PATH = "/usr/local/bin:/opt/homebrew/bin:${env.PATH}"
+        IMAGE_NAME = "bhaskarvanam/spring-boot"
 
-         IMAGE_NAME = "bhaskarvanam/spring-boot"
+        IMAGE_TAG = "1.0.${BUILD_NUMBER}"
 
-         IMAGE_TAG = "1.0.${BUILD_NUMBER}"
+    }
 
-     }
 
+    tools {
 
-     tools {
+        jdk 'JDK 21'
 
-         jdk 'JDK 21'
+        maven 'mvn'
 
-         maven 'mvn'
+    }
 
-     }
 
+    stages {
 
-     stages {
 
+        stage('Checkout') {
 
-         stage('Checkout') {
+            steps {
 
-             steps {
+                git branch: 'dev',
+                    url: 'https://github.com/bhaskar2404/CICD.git'
 
-                 git branch: 'dev',
-                     url: 'https://github.com/bhaskar2404/CICD.git'
+            }
 
-             }
+        }
 
-         }
 
+        stage('Tool Check') {
 
+            steps {
 
-         stage('Tool Check') {
+                sh '''
 
-             steps {
+                echo "Checking tools"
 
-                 sh '''
+                which docker
+                which kubectl
 
-                 echo "Checking tools"
+                docker version
 
-                 which docker
-                 which kubectl
+                kubectl version --client
 
-                 docker version
+                '''
 
-                 kubectl version --client
+            }
 
-                 '''
+        }
 
-             }
 
-         }
+        stage('Build & Test') {
 
+            steps {
 
+                sh '''
 
-         stage('Build & Test') {
+                java -version
 
-             steps {
+                mvn clean package
 
-                 sh '''
+                '''
 
-                 java -version
+            }
 
-                 mvn clean package
+        }
 
-                 '''
 
-             }
+        stage('Docker Build') {
 
-         }
+            steps {
 
+                sh '''
 
+                docker build \
+                -t ${IMAGE_NAME}:${IMAGE_TAG} .
 
-         stage('Docker Build') {
+                '''
 
-             steps {
+            }
 
-                 sh '''
+        }
 
-                 docker build \
-                 -t ${IMAGE_NAME}:${IMAGE_TAG} .
 
-                 '''
+        stage('Docker Push') {
 
-             }
+            steps {
 
-         }
+                withCredentials([
 
+                    usernamePassword(
 
+                    credentialsId: 'c98361e3-927f-49d7-95cf-1214da85f03f',
 
-         stage('Docker Push') {
+                    usernameVariable: 'DOCKER_USER',
 
-             steps {
+                    passwordVariable: 'DOCKER_TOKEN'
 
+                    )
 
-                 withCredentials([
+                ]) {
 
-                     usernamePassword(
 
-                     credentialsId: 'c98361e3-927f-49d7-95cf-1214da85f03f',
+                    sh '''
 
-                     usernameVariable: 'DOCKER_USER',
+                    echo $DOCKER_TOKEN | docker login \
+                    -u $DOCKER_USER \
+                    --password-stdin
 
-                     passwordVariable: 'DOCKER_TOKEN'
 
-                     )
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
-                 ]) {
+                    '''
 
+                }
 
-                     sh '''
+            }
 
-                     echo $DOCKER_TOKEN | docker login \
-                     -u $DOCKER_USER \
-                     --password-stdin
+        }
 
 
-                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
+        stage('Kubernetes Check') {
 
-                     '''
+            steps {
 
-                 }
+                sh '''
 
-             }
+                kubectl cluster-info
 
-         }
+                kubectl get nodes
 
+                '''
 
+            }
 
-         stage('Kubernetes Check') {
+        }
 
-             steps {
 
-                 sh '''
 
-                 kubectl cluster-info
+        stage('Decide Deployment Color') {
 
-                 kubectl get nodes
+            steps {
 
-                 '''
+                script {
 
-             }
 
-         }
+                    def blueExists = sh(
 
+                    script: "kubectl get deployment springboot-app-blue >/dev/null 2>&1",
 
+                    returnStatus: true
 
+                    )
 
-         stage('Decide Deployment Color') {
 
+                    if (blueExists != 0) {
 
-             steps {
 
+                        env.DEPLOY_COLOR = "blue"
 
-                 script {
+                        echo "FIRST DEPLOYMENT -> BLUE"
 
 
-                     def blueExists = sh(
+                    }
+                    else {
 
-                     script: "kubectl get deployment springboot-app-blue >/dev/null 2>&1",
 
-                     returnStatus: true
+                        env.DEPLOY_COLOR = "green"
 
-                     )
+                        echo "BLUE EXISTS -> DEPLOY GREEN"
 
 
-                     if (blueExists != 0) {
+                    }
 
 
-                         env.DEPLOY_COLOR = "blue"
+                    echo "DEPLOY COLOR = ${env.DEPLOY_COLOR}"
 
-                         echo "================================"
 
-                         echo "FIRST DEPLOYMENT"
+                }
 
-                         echo "DEPLOYING BLUE"
+            }
 
-                         echo "================================"
+        }
 
 
-                     }
 
-                     else {
+        stage('Deploy Application') {
 
+            steps {
 
-                         env.DEPLOY_COLOR = "green"
 
+                sh """
 
-                         echo "================================"
+                echo "Deploying ${env.DEPLOY_COLOR}"
 
-                         echo "BLUE EXISTS"
 
-                         echo "DEPLOYING GREEN"
+                sed -i.bak \
+                "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+                k8s/${env.DEPLOY_COLOR}/deployment.yml
 
-                         echo "================================"
 
+                kubectl apply \
+                -f k8s/${env.DEPLOY_COLOR}/deployment.yml
 
-                     }
 
+                kubectl apply \
+                -f k8s/${env.DEPLOY_COLOR}/service.yml
 
-                     echo "FINAL COLOR : ${env.DEPLOY_COLOR}"
 
 
-                 }
+                kubectl rollout status \
+                deployment/springboot-app-${env.DEPLOY_COLOR} \
+                --timeout=120s
 
-             }
 
-         }
+                """
 
+            }
 
+        }
 
 
-         stage('Validate Color') {
 
+        stage('Health Check') {
 
-             steps {
+            steps {
 
 
-                 script {
+                sh """
 
+                echo "Health Check ${env.DEPLOY_COLOR}"
 
-                     if (!env.DEPLOY_COLOR) {
 
-                         error("DEPLOY_COLOR is empty")
+                kubectl get pods \
+                -l color=${env.DEPLOY_COLOR}
 
-                     }
 
+                kubectl get endpoints \
+                springboot-${env.DEPLOY_COLOR}-service
 
-                 }
 
+                """
 
-             }
+            }
 
-         }
+        }
 
 
 
+        /*
+         First deployment:
+         BLUE becomes live
+        */
 
+        stage('Create BLUE Ingress') {
 
-         stage('Deploy Application') {
 
+            when {
 
-             steps {
+                expression {
 
+                    return env.DEPLOY_COLOR == "blue"
 
-                 sh """
+                }
 
+            }
 
-                 echo "Deploying ${env.DEPLOY_COLOR}"
 
+            steps {
 
-                 sed -i.bak \
-                 "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-                 k8s/${env.DEPLOY_COLOR}/deployment.yml
 
+                sh """
 
+                echo "Creating BLUE ingress"
 
-                 kubectl apply \
-                 -f k8s/${env.DEPLOY_COLOR}/deployment.yml
 
+                kubectl apply \
+                -f k8s/blue/ingress.yml
 
 
-                 kubectl apply \
-                 -f k8s/${env.DEPLOY_COLOR}/service.yml
+                kubectl get ingress
 
 
+                kubectl describe ingress springboot-ingress
 
-                 kubectl rollout status \
-                 deployment/springboot-app-${env.DEPLOY_COLOR} \
-                 --timeout=120s
 
+                """
 
-                 """
+            }
 
-             }
+        }
 
-         }
 
 
+        /*
+         Second deployment:
+         GREEN validation
+        */
 
+        stage('Approve GREEN Traffic Switch') {
 
 
-         stage('Health Check') {
+            when {
 
+                expression {
 
-             steps {
+                    return env.DEPLOY_COLOR == "green"
 
+                }
 
-                 sh """
+            }
 
 
-                 echo "Checking ${env.DEPLOY_COLOR}"
+            steps {
 
 
-                 kubectl get pods \
-                 -l color=${env.DEPLOY_COLOR}
+                input(
 
+                    message: "GREEN is healthy. Switch traffic to GREEN?",
 
+                    ok: "Promote GREEN"
 
-                 kubectl get endpoints \
-                 springboot-${env.DEPLOY_COLOR}-service
+                )
 
+            }
 
-                 """
+        }
 
-             }
 
-         }
 
+        stage('Switch Traffic To GREEN') {
 
 
+            when {
 
+                expression {
 
-         stage('Deploy BLUE Ingress') {
+                    return env.DEPLOY_COLOR == "green"
 
+                }
 
-             when {
+            }
 
 
-                 expression {
+            steps {
 
 
-                     return env.DEPLOY_COLOR == "blue"
+                sh """
 
+                echo "Switching traffic to GREEN"
 
-                 }
 
-             }
+                kubectl apply \
+                -f k8s/green/ingress.yml
 
 
-             steps {
+                kubectl get ingress
 
 
-                 sh """
+                kubectl describe ingress springboot-ingress
 
 
-                 echo "Creating BLUE ingress"
+                """
 
+            }
 
-                 kubectl apply \
-                 -f k8s/blue/ingress.yml
+        }
 
 
 
-                 kubectl get ingress
+        stage('Verify Deployment') {
 
+            steps {
 
-                 """
 
-             }
+                sh '''
 
-         }
+                kubectl get pods
 
+                kubectl get svc
 
-         stage('Approve GREEN Traffic Switch') {
+                kubectl get ingress
 
+                '''
 
-             when {
+            }
 
+        }
 
-                 expression {
 
+        stage('Rollback Option') {
 
-                     return env.DEPLOY_COLOR == "green"
 
+            when {
 
-                 }
+                expression {
 
-             }
+                    return env.DEPLOY_COLOR == "green"
 
+                }
 
-             steps {
+            }
 
 
-                 input(
+            steps {
 
-                 message: "GREEN is healthy. Switch traffic to GREEN?",
 
-                 ok: "Promote GREEN"
+                input(
 
-                 )
+                    message: "Keep GREEN or rollback to BLUE?",
 
+                    ok: "Continue"
 
-             }
+                )
 
-         }
 
+                echo "Deployment completed"
 
+            }
 
+        }
 
 
-         stage('Switch Traffic To GREEN') {
+    }
 
 
-             when {
 
+    post {
 
-                 expression {
 
+        success {
 
-                     return env.DEPLOY_COLOR == "green"
 
+            echo """
 
-                 }
+======================================
 
-             }
+PIPELINE SUCCESS 🚀
 
+IMAGE:
 
-             steps {
+${IMAGE_NAME}:${IMAGE_TAG}
 
 
-                 sh """
+DEPLOYED COLOR:
 
+${env.DEPLOY_COLOR}
 
-                 echo "Switching traffic to GREEN"
 
+======================================
 
-                 kubectl apply \
-                 -f k8s/green/ingress.yml
+"""
 
+        }
 
 
-                 kubectl get ingress
+        failure {
 
 
-                 """
+            echo """
 
-             }
+======================================
 
-         }
+PIPELINE FAILED ❌
 
+======================================
 
+"""
 
+        }
 
+    }
 
-         stage('Verify Deployment') {
-
-
-             steps {
-
-
-                 sh '''
-
-
-                 kubectl get pods
-
-                 kubectl get svc
-
-                 kubectl get ingress
-
-
-                 '''
-
-             }
-
-         }
-
-
-
-
-
-         stage('Delete BLUE') {
-
-
-             when {
-
-
-                 expression {
-
-
-                     return env.DEPLOY_COLOR == "green"
-
-
-                 }
-
-             }
-
-
-             steps {
-
-
-                 input(
-
-                 message: "GREEN is live. Delete BLUE?",
-
-                 ok: "Delete BLUE"
-
-                 )
-
-
-                 sh '''
-
-
-                 kubectl delete deployment springboot-app-blue
-
-
-                 kubectl delete service springboot-blue-service
-
-
-                 '''
-
-
-             }
-
-         }
-
-
-     }
-
-
-
-     post {
-
-
-         success {
-
-
-             echo """
-
- ========================================
-
- PIPELINE SUCCESS 🚀
-
-
- IMAGE:
-
- ${IMAGE_NAME}:${IMAGE_TAG}
-
-
- DEPLOYED COLOR:
-
- ${env.DEPLOY_COLOR}
-
-
- ========================================
-
- """
-
-         }
-
-
-
-         failure {
-
-
-             echo """
-
- ========================================
-
- PIPELINE FAILED ❌
-
- ========================================
-
- """
-
-
-         }
-
-     }
-
- }
+}
